@@ -36,6 +36,7 @@ header .sp{flex:1}
 button,.btn{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer;white-space:nowrap}
 button:hover,.btn:hover{border-color:var(--accent)}
 button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+select{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 6px}
 input[type=search]{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:4px 8px;width:180px}
 label.chk{display:flex;align-items:center;gap:4px;color:var(--muted);white-space:nowrap}
 main{flex:1;display:flex;min-height:0}
@@ -113,8 +114,11 @@ svg.focus .node.hl,svg.focus .edge.hl{opacity:1}
 <header>
   <h1>DEXPI P&amp;ID Viewer</h1>
   <label class="btn" title="Open a DEXPI 2.0 XML file">Open…<input id="file" type="file" accept=".xml,.dexpi,application/xml,text/xml" hidden></label>
-  <button id="btnSample" title="Load samples/3bb1a46a89c0.dexpi.xml (requires serving over http)">Sample</button>
+  <button id="btnSample" title="Load samples/dexpi_test.dexpi.xml (requires serving over http)">Sample</button>
   <input id="search" type="search" placeholder="Find id / tag…" aria-label="Find object">
+  <select id="optLayout" aria-label="Layout" title="Layout algorithm">
+    <option value="auto">Auto layout</option><option value="flow">Flow (layered)</option><option value="network">Network (stress)</option>
+  </select>
   <label class="chk"><input id="optInstr" type="checkbox" checked>Instruments</label>
   <label class="chk"><input id="optIso" type="checkbox" checked>Unconnected</label>
   <label class="chk"><input id="optLabels" type="checkbox" checked>Labels</label>
@@ -460,7 +464,15 @@ function layout(G, opt) {
     comps.push(c);
   }
   const isolated = comps.filter(c => c.length === 1 && !opt.keepIsoInFlow).map(c => c[0]);
-  const blocks = comps.filter(c => c.length > 1).map(c => layoutComp(c, edges.filter(e => c.includes(e.a))));
+  const blocks = comps.filter(c => c.length > 1).map(c => {
+    const cs = new Set(c), ce = edges.filter(e => cs.has(e.a));
+    let b = layoutComp(c, ce);
+    // Flow layering suits directed process lines; meshes (e.g. digitized drawings whose pipe
+    // directions are arbitrary) come out as tall columns, so fall back to a network layout.
+    const poor = b.h > b.w * 1.6 || b.w > b.h * 6;
+    if (opt.mode === "network" || (opt.mode === "auto" && poor && c.length > 8)) b = stressComp(c, ce);
+    return b;
+  });
   // shelf packing
   blocks.sort((p, q) => q.h - p.h || q.w - p.w);
   const GAP = 70;
@@ -587,9 +599,77 @@ function layoutComp(cn, ce) {
   return { nodes: cn, edges: ce, w: acc - LAYER_GAP, h: maxY - minY };
 }
 
+// Stress-majorization layout (graph distances -> Euclidean), rotated to landscape, then
+// de-overlapped. Edges are straight segments clipped to the symbol boxes.
+function stressComp(cn, ce) {
+  const n = cn.length, idx = new Map(cn.map((v, i) => [v, i])), adj = cn.map(() => []);
+  const rad = v => Math.max(v.w, v.h) / 2;
+  for (const e of ce) { const a = idx.get(e.a), b = idx.get(e.b), l = rad(e.a) + rad(e.b) + 46; adj[a].push([b, l]); adj[b].push([a, l]); }
+  const D = cn.map(() => new Float64Array(n));
+  for (let s = 0; s < n; s++) {                          // Dijkstra from every node (n is small)
+    const d = D[s].fill(Infinity), done = new Uint8Array(n); d[s] = 0;
+    for (let k = 0; k < n; k++) {
+      let u = -1, best = Infinity;
+      for (let i = 0; i < n; i++) if (!done[i] && d[i] < best) { best = d[i]; u = i; }
+      if (u < 0) break; done[u] = 1;
+      for (const [v, l] of adj[u]) if (d[u] + l < d[v]) d[v] = d[u] + l;
+    }
+  }
+  // deterministic init: spiral ordered by graph distance from the most connected node
+  const X = new Float64Array(n), Y = new Float64Array(n);
+  const start = cn.reduce((bi, v, i) => v.edges.length > cn[bi].edges.length ? i : bi, 0);
+  const ord = [...Array(n).keys()].sort((a, b) => D[start][a] - D[start][b]);
+  const R = Math.max(...D[start].filter(isFinite)) || 100;
+  ord.forEach((i, k) => { const t = k / n * 2 * Math.PI * 3, r = R * (0.2 + 0.8 * k / n); X[i] = r * Math.cos(t); Y[i] = r * Math.sin(t); });
+  for (let it = 0; it < 400; it++) {
+    let moved = 0;
+    for (let i = 0; i < n; i++) {
+      let nx = 0, ny = 0, ws = 0;
+      for (let j = 0; j < n; j++) {
+        if (i === j || !isFinite(D[i][j])) continue;
+        const d = D[i][j], w = 1 / (d * d), dx = X[i] - X[j], dy = Y[i] - Y[j], l = Math.hypot(dx, dy) || 1e-3;
+        nx += w * (X[j] + d * dx / l); ny += w * (Y[j] + d * dy / l); ws += w;
+      }
+      if (!ws) continue;
+      nx /= ws; ny /= ws; moved += Math.abs(nx - X[i]) + Math.abs(ny - Y[i]); X[i] = nx; Y[i] = ny;
+    }
+    if (moved / n < 0.05) break;
+  }
+  // rotate principal axis to horizontal
+  let mx = 0, my = 0; for (let i = 0; i < n; i++) { mx += X[i]; my += Y[i]; } mx /= n; my /= n;
+  let cxx = 0, cyy = 0, cxy = 0;
+  for (let i = 0; i < n; i++) { const dx = X[i] - mx, dy = Y[i] - my; cxx += dx * dx; cyy += dy * dy; cxy += dx * dy; }
+  const th = -0.5 * Math.atan2(2 * cxy, cxx - cyy), co = Math.cos(th), si = Math.sin(th);
+  for (let i = 0; i < n; i++) { const dx = X[i] - mx, dy = Y[i] - my; X[i] = dx * co - dy * si; Y[i] = dx * si + dy * co; }
+  // remove overlaps between symbol+label boxes
+  const box = cn.map(v => { const lb = labelOf(v), lab = !!(lb.main || lb.sub); return { hx: Math.max(v.w, lab ? 56 : 0) / 2 + 5, hy: (v.h + (lab ? 24 : 0)) / 2 + 5, oy: lab ? 12 : 0 }; });
+  for (let pass = 0; pass < 40; pass++) {
+    let any = false;
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const dx = X[j] - X[i], dy = (Y[j] + box[j].oy) - (Y[i] + box[i].oy);
+      const ox = box[i].hx + box[j].hx - Math.abs(dx), oy = box[i].hy + box[j].hy - Math.abs(dy);
+      if (ox <= 0 || oy <= 0) continue;
+      any = true;
+      if (ox < oy) { const m = ox / 2 * (dx < 0 ? -1 : 1); X[i] -= m; X[j] += m; }
+      else { const m = oy / 2 * (dy < 0 ? -1 : 1); Y[i] -= m; Y[j] += m; }
+    }
+    if (!any) break;
+  }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  cn.forEach((v, i) => { x0 = Math.min(x0, X[i] - box[i].hx); x1 = Math.max(x1, X[i] + box[i].hx); y0 = Math.min(y0, Y[i] - v.h / 2); y1 = Math.max(y1, Y[i] + box[i].oy + box[i].hy); });
+  cn.forEach((v, i) => { v.x = X[i] - x0; v.y = Y[i] - y0; });
+  const clip = (p, q) => {
+    const dx = q.x - p.x, dy = q.y - p.y, hw = p.w / 2 + 2, hh = p.h / 2 + 2;
+    const t = Math.min(dx ? hw / Math.abs(dx) : Infinity, dy ? hh / Math.abs(dy) : Infinity, 1);
+    return [p.x + dx * t, p.y + dy * t];
+  };
+  for (const e of ce) { e.route = [clip(e.a, e.b), clip(e.b, e.a)]; e.reversed = false; }
+  return { nodes: cn, edges: ce, w: x1 - x0, h: y1 - y0 };
+}
+
 /* --------------------------------------------------------------- render */
 const S = { model: null, graph: null, issues: [], view: null, k: 1, tx: 0, ty: 0, sel: null, fileName: "" };
-const opt = () => ({ instr: $("#optInstr").checked, iso: $("#optIso").checked });
+const opt = () => ({ instr: $("#optInstr").checked, iso: $("#optIso").checked, mode: $("#optLayout").value });
 
 function render() {
   const G = S.graph; if (!G) return;
@@ -810,8 +890,8 @@ function loadUrl(u) {
   fetch(u).then(r => { if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.text(); }).then(t => load(t, u.split("/").pop()))
     .catch(err => { $("#pane-check").innerHTML = `<p><span class="badge err">Could not fetch</span> ${esc(u)}</p><p class="muted">${esc(err.message)}. Browsers block fetch from <span class="mono">file://</span>; serve the folder (e.g. <span class="mono">python -m http.server</span>) or use Open….</p>`; tab("check"); });
 }
-$("#btnSample").onclick = () => loadUrl("samples/3bb1a46a89c0.dexpi.xml");
-["#optInstr", "#optIso"].forEach(s => $(s).onchange = () => { render(); fit(); });
+$("#btnSample").onclick = () => loadUrl("samples/dexpi_test.dexpi.xml");
+["#optInstr", "#optIso", "#optLayout"].forEach(s => $(s).onchange = () => { render(); fit(); });
 $("#optLabels").onchange = () => $("#svg").classList.toggle("hidden-labels", !$("#optLabels").checked);
 $("#search").addEventListener("keydown", e => {
   if (e.key !== "Enter" || !S.model) return;
