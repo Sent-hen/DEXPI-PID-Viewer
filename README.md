@@ -8,9 +8,9 @@ A lightweight, dependency-free, single-page viewer and validator for **DEXPI 2.0
 
 ## Usage
 
-Open `index.html` in a browser, then click **Open…** or drag a `.xml` file onto the canvas. Nothing is uploaded; parsing happens locally.
+Open `index.html` in a browser. It opens the official **DEXPI 2.0.1 reference P&ID** (`samples/reference_pid.dexpi.xml`) by default. This works when served over http and when opened straight from disk. To view your own file, click **Open…** or drag a `.xml` onto the canvas. **Sample** reloads the reference. Nothing is uploaded; parsing happens locally.
 
-To use the **Sample** button or the `?file=` URL parameter, serve the folder (browsers block `fetch` from `file://`):
+To open a specific file by URL with `?file=`, serve the folder, because browsers block `fetch` from `file://`:
 
 ```bash
 python -m http.server 8765
@@ -43,15 +43,17 @@ Then open `http://localhost:8765/?file=samples/dexpi_test.dexpi.xml`.
 | `metamodel.js` | Compact class table generated from DEXPI 2.0.1 `Core.xml` + `Plant.xml` (optional; enables metamodel checks) |
 | `tools/validate.py` | CLI validator: XSD + metamodel checks (`pip install lxml`) |
 | `tools/build_metamodel.py` | Regenerates `metamodel.js` from `tools/spec/` |
+| `tools/build_sample_js.py` | Regenerates `samples/reference_pid.dexpi.js`, the `<script>` copy of the default sample used when the page is opened from `file://` |
 | `tools/spec/` | Official DEXPI 2.0.1 `DEXPI_XML_Schema.xsd`, `Core.xml`, `Plant.xml` |
-| `samples/` | `dexpi_test.dexpi.xml` (pid-digitizer export of the drawing below) and the official DEXPI reference P&ID |
-| `docs/` | Source drawing and digitizer detection overlay for the sample |
+| `samples/reference_pid.dexpi.xml` | **Default sample**: the official [DEXPI 2.0.1 reference P&ID](https://dexpi.org/specification/2.0.1/html/appendix/reference_pid.html). It passes with 0 errors. |
+| `samples/dexpi_test.dexpi.xml` | pid-digitizer export of the drawing shown below |
+| `docs/` | Source drawing and digitizer detection overlay for `dexpi_test` |
 
 ```bash
 python tools/validate.py samples/dexpi_test.dexpi.xml
 ```
 
-## Sample: `samples/dexpi_test.dexpi.xml`
+## Digitizer example: `samples/dexpi_test.dexpi.xml`
 
 `dexpi_test.dexpi.xml` is a pid-digitizer export of a synthetic P&ID (drawing `SAMPLE_3277.JPG`).
 

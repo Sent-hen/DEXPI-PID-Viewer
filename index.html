@@ -114,7 +114,7 @@ svg.focus .node.hl,svg.focus .edge.hl{opacity:1}
 <header>
   <h1>DEXPI P&amp;ID Viewer</h1>
   <label class="btn" title="Open a DEXPI 2.0 XML file">Open…<input id="file" type="file" accept=".xml,.dexpi,application/xml,text/xml" hidden></label>
-  <button id="btnSample" title="Load samples/dexpi_test.dexpi.xml (requires serving over http)">Sample</button>
+  <button id="btnSample" title="Load the DEXPI 2.0.1 reference P&amp;ID">Sample</button>
   <input id="search" type="search" placeholder="Find id / tag…" aria-label="Find object">
   <select id="optLayout" aria-label="Layout" title="Layout algorithm">
     <option value="auto">Auto layout</option><option value="flow">Flow (layered)</option><option value="network">Network (stress)</option>
@@ -890,7 +890,22 @@ function loadUrl(u) {
   fetch(u).then(r => { if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.text(); }).then(t => load(t, u.split("/").pop()))
     .catch(err => { $("#pane-check").innerHTML = `<p><span class="badge err">Could not fetch</span> ${esc(u)}</p><p class="muted">${esc(err.message)}. Browsers block fetch from <span class="mono">file://</span>; serve the folder (e.g. <span class="mono">python -m http.server</span>) or use Open….</p>`; tab("check"); });
 }
-$("#btnSample").onclick = () => loadUrl("samples/dexpi_test.dexpi.xml");
+// Default sample: the official DEXPI 2.0.1 reference P&ID. fetch() works when served over http;
+// from file:// it is blocked, so fall back to the <script>-wrapped copy (tools/build_sample_js.py).
+const SAMPLE = "samples/reference_pid.dexpi.xml";
+function loadSample() {
+  const viaScript = () => {
+    if (window.DEXPI_SAMPLE) return load(DEXPI_SAMPLE.xml, DEXPI_SAMPLE.name);
+    const sc = document.createElement("script");
+    sc.src = SAMPLE.replace(/\.xml$/, ".js");
+    sc.onload = () => window.DEXPI_SAMPLE && load(DEXPI_SAMPLE.xml, DEXPI_SAMPLE.name);
+    sc.onerror = () => $("#pane-check").innerHTML = `<p class="muted">Default sample not found (<span class="mono">${esc(SAMPLE)}</span>). Use Open… to load a file.</p>`;
+    document.head.appendChild(sc);
+  };
+  if (location.protocol === "file:") return viaScript();
+  fetch(SAMPLE).then(r => { if (!r.ok) throw 0; return r.text(); }).then(t => load(t, SAMPLE.split("/").pop())).catch(viaScript);
+}
+$("#btnSample").onclick = loadSample;
 ["#optInstr", "#optIso", "#optLayout"].forEach(s => $(s).onchange = () => { render(); fit(); });
 $("#optLabels").onchange = () => $("#svg").classList.toggle("hidden-labels", !$("#optLabels").checked);
 $("#search").addEventListener("keydown", e => {
@@ -914,7 +929,7 @@ $("#btnSvg").onclick = () => {
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = S.fileName.replace(/\.xml$/i, "") + ".svg"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 renderLegend();
-const qp = new URLSearchParams(location.search).get("file"); if (qp) loadUrl(qp);
+const qp = new URLSearchParams(location.search).get("file"); if (qp) loadUrl(qp); else loadSample();
 </script>
 </body>
 </html>
