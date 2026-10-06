@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DEXPI P&amp;ID Viewer</title>
+<meta name="description" content="Lightweight, dependency-free viewer and validator for DEXPI 2.0.1 XML P&amp;ID files.">
+<script src="metamodel.js" onerror="window.DEXPI_METAMODEL=null"></script>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --ink:#1d2330; --muted:#667085; --line:#d9dde4;
+  --accent:#1f6feb; --pipe:#1d2330; --signal:#7a4fd6; --equip-fill:#eef4ff; --equip:#2856a8;
+  --valve:#1d2330; --instr:#0f7b6c; --instr-fill:#e8f7f4; --err:#c62828; --warn:#b26a00; --ok:#1e7f3c;
+  --dim:.15; --canvas:#ffffff; --grid:#eef0f3;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1218; --panel:#171b23; --ink:#e6e9ef; --muted:#98a2b3; --line:#2a303b;
+    --accent:#5b9bff; --pipe:#d6dbe4; --signal:#b69cff; --equip-fill:#18253d; --equip:#7fa8f0;
+    --valve:#d6dbe4; --instr:#4fd1b8; --instr-fill:#123029; --err:#ff6b6b; --warn:#f0b44c; --ok:#53c97a;
+    --canvas:#12161d; --grid:#1b2029;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1218; --panel:#171b23; --ink:#e6e9ef; --muted:#98a2b3; --line:#2a303b;
+  --accent:#5b9bff; --pipe:#d6dbe4; --signal:#b69cff; --equip-fill:#18253d; --equip:#7fa8f0;
+  --valve:#d6dbe4; --instr:#4fd1b8; --instr-fill:#123029; --err:#ff6b6b; --warn:#f0b44c; --ok:#53c97a;
+  --canvas:#12161d; --grid:#1b2029;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:13px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+header h1{font-size:15px;margin:0 8px 0 0;white-space:nowrap}
+header .sp{flex:1}
+button,.btn{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer;white-space:nowrap}
+button:hover,.btn:hover{border-color:var(--accent)}
+button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+input[type=search]{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:4px 8px;width:180px}
+label.chk{display:flex;align-items:center;gap:4px;color:var(--muted);white-space:nowrap}
+main{flex:1;display:flex;min-height:0}
+#side{width:340px;min-width:260px;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+#tabs{display:flex;border-bottom:1px solid var(--line)}
+#tabs button{flex:1;border:0;border-radius:0;border-bottom:2px solid transparent;background:none;padding:8px 4px}
+#tabs button.on{color:var(--accent);border-bottom-color:var(--accent);background:none}
+.pane{flex:1;overflow:auto;padding:10px 12px;display:none}
+.pane.on{display:block}
+#stage{flex:1;position:relative;background:var(--canvas);min-width:0}
+#svg{width:100%;height:100%;display:block;cursor:grab;touch-action:none}
+#svg.panning{cursor:grabbing}
+#drop{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:var(--muted);text-align:center;padding:16px}
+#drop.hidden{display:none}
+#stage.dragover::after{content:"Drop DEXPI XML";position:absolute;inset:8px;border:2px dashed var(--accent);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--accent);background:color-mix(in srgb,var(--canvas) 80%,transparent)}
+#status{position:absolute;left:10px;bottom:8px;color:var(--muted);font-size:12px;pointer-events:none}
+#zoombox{position:absolute;right:10px;bottom:10px;display:flex;gap:4px}
+h3{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:14px 0 6px}
+h3:first-child{margin-top:0}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-weight:600;font-size:12px}
+.badge.ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.badge.err{background:color-mix(in srgb,var(--err) 18%,transparent);color:var(--err)}
+.badge.warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+ul.issues{list-style:none;margin:0;padding:0}
+ul.issues li{padding:5px 6px;border-bottom:1px solid var(--line);display:flex;gap:6px;align-items:flex-start}
+ul.issues li .lv{font-weight:700;font-size:11px;min-width:14px}
+ul.issues li.error .lv{color:var(--err)} ul.issues li.warning .lv{color:var(--warn)} ul.issues li.info .lv{color:var(--muted)}
+a.ref{color:var(--accent);cursor:pointer;text-decoration:none;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+a.ref:hover{text-decoration:underline}
+table.kv{width:100%;border-collapse:collapse}
+table.kv td{padding:3px 4px;border-bottom:1px solid var(--line);vertical-align:top;word-break:break-word}
+table.kv td:first-child{color:var(--muted);width:40%}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.muted{color:var(--muted)}
+details{margin-left:10px}
+details>summary{cursor:pointer;list-style:none;padding:1px 0}
+details>summary::before{content:"▸ ";color:var(--muted)}
+details[open]>summary::before{content:"▾ "}
+.leaf{margin-left:24px;padding:1px 0}
+.legend{display:grid;grid-template-columns:44px 1fr;gap:6px 8px;align-items:center}
+.stats td:last-child{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;width:1%}
+/* SVG */
+.edge{fill:none;stroke:var(--pipe);stroke-width:1.6}
+.edge.implied{stroke-dasharray:6 4;opacity:.7}
+.edge.measuring,.edge.sensing{stroke:var(--instr);stroke-width:1}
+.edge.signal{stroke:var(--signal);stroke-width:1;stroke-dasharray:5 3}
+.edge-hit{fill:none;stroke:transparent;stroke-width:9;cursor:pointer}
+.node{cursor:pointer}
+.node .lbl{font-size:10px;fill:var(--ink);text-anchor:middle;dominant-baseline:hanging}
+.node .sub{font-size:8.5px;fill:var(--muted);text-anchor:middle;dominant-baseline:hanging}
+.node .in{font-size:10px;fill:var(--ink);text-anchor:middle;dominant-baseline:central;font-weight:600}
+.s-eq{fill:var(--equip-fill);stroke:var(--equip);stroke-width:1.6}
+.s-v{fill:var(--canvas);stroke:var(--valve);stroke-width:1.3}
+.s-vf{fill:var(--valve);stroke:var(--valve);stroke-width:1.3}
+.s-ins{fill:var(--instr-fill);stroke:var(--instr);stroke-width:1.3}
+.s-dot{fill:var(--pipe)}
+.s-end{fill:var(--canvas);stroke:var(--muted);stroke-width:1.2}
+.s-gen{fill:var(--canvas);stroke:var(--muted);stroke-width:1.2}
+.grp-title{font-size:12px;fill:var(--muted);font-weight:600}
+.grp-box{fill:none;stroke:var(--line);stroke-dasharray:4 4}
+svg.focus .node,svg.focus .edge{opacity:var(--dim)}
+svg.focus .node.hl,svg.focus .edge.hl{opacity:1}
+.node.sel .sel-ring{stroke:var(--accent);stroke-width:2;fill:none}
+.edge.hl{stroke:var(--accent)!important;stroke-width:2.4}
+.hidden-labels .lbl,.hidden-labels .sub{display:none}
+@media (max-width:760px){
+  main{flex-direction:column-reverse}
+  #side{width:auto;height:42%;border-right:0;border-top:1px solid var(--line)}
+  header{padding:8px 16px}
+  input[type=search]{width:120px}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>DEXPI P&amp;ID Viewer</h1>
+  <label class="btn" title="Open a DEXPI 2.0 XML file">Open…<input id="file" type="file" accept=".xml,.dexpi,application/xml,text/xml" hidden></label>
+  <button id="btnSample" title="Load samples/3bb1a46a89c0.dexpi.xml (requires serving over http)">Sample</button>
+  <input id="search" type="search" placeholder="Find id / tag…" aria-label="Find object">
+  <label class="chk"><input id="optInstr" type="checkbox" checked>Instruments</label>
+  <label class="chk"><input id="optIso" type="checkbox" checked>Unconnected</label>
+  <label class="chk"><input id="optLabels" type="checkbox" checked>Labels</label>
+  <span class="sp"></span>
+  <button id="btnSvg" title="Download the current view as SVG">Export SVG</button>
+  <button id="btnTheme" title="Toggle light/dark">◐</button>
+</header>
+<main>
+  <aside id="side">
+    <nav id="tabs">
+      <button data-tab="check" class="on">Validation</button>
+      <button data-tab="props">Inspector</button>
+      <button data-tab="tree">Model</button>
+      <button data-tab="legend">Legend</button>
+    </nav>
+    <section id="pane-check" class="pane on"><p class="muted">Open a DEXPI 2.0.1 XML file (or drop it on the canvas) to validate and view it.</p></section>
+    <section id="pane-props" class="pane"><p class="muted">Click a symbol or line to inspect it.</p></section>
+    <section id="pane-tree" class="pane"></section>
+    <section id="pane-legend" class="pane"></section>
+  </aside>
+  <div id="stage">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="var(--pipe)"/></marker>
+        <marker id="arrS" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="var(--signal)"/></marker>
+        <marker id="arrM" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L10,5 L0,9 z" fill="var(--instr)"/></marker>
+      </defs>
+      <g id="vp"></g>
+    </svg>
+    <div id="drop"><div style="font-size:40px">⎔</div><div><b>Drop a DEXPI XML file here</b><br>or use <i>Open…</i></div></div>
+    <div id="status"></div>
+    <div id="zoombox"><button id="zIn" title="Zoom in (+)">+</button><button id="zOut" title="Zoom out (−)">−</button><button id="zFit" title="Fit to view (F)">Fit</button></div>
+  </div>
+</main>
+<script>
+"use strict";
+/* =========================================================================
+ * DEXPI P&ID Viewer — single file, no dependencies.
+ * Targets the DEXPI 2.0.1 XML exchange format
+ * (https://dexpi.org/specification/2.0.1/html/basics/metamodel_and_exchange_format.html)
+ * ========================================================================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const shortType = t => (t || "").split("/").pop().split(".").pop();
+const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/* ---------------------------------------------------------------- parse */
+function parseDexpi(text) {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  const pe = doc.getElementsByTagName("parsererror")[0];
+  if (pe) throw new Error("XML is not well-formed: " + pe.textContent.trim().split("\n")[0]);
+  const root = doc.documentElement;
+  const model = { root, name: root.getAttribute("name"), uri: root.getAttribute("uri"),
+    imports: [], objects: [], byId: new Map(), roots: [] };
+  for (const el of root.children) if (el.localName === "Import")
+    model.imports.push({ prefix: el.getAttribute("prefix"), source: el.getAttribute("source") });
+
+  const walk = (el, parent, prop) => {
+    const o = { el, id: el.getAttribute("id"), name: el.getAttribute("name"), type: el.getAttribute("type") || "",
+      parent, prop, data: {}, refs: {}, comps: {}, children: [] };
+    o.short = shortType(o.type);
+    model.objects.push(o);
+    if (o.id && !model.byId.has(o.id)) model.byId.set(o.id, o);
+    for (const c of el.children) {
+      const p = c.getAttribute("property");
+      if (c.localName === "Data") o.data[p] = [...c.children].map(dataValue);
+      else if (c.localName === "References") o.refs[p] = (c.getAttribute("objects") || "").split(/\s+/).filter(Boolean);
+      else if (c.localName === "Components") {
+        o.comps[p] = [];
+        for (const k of c.children) if (k.localName === "Object") { const ch = walk(k, o, p); o.comps[p].push(ch); o.children.push(ch); }
+      }
+    }
+    return o;
+  };
+  for (const el of root.children) if (el.localName === "Object") model.roots.push(walk(el, null, null));
+  return model;
+}
+function dataValue(v) {
+  if (v.localName === "DataReference") return (v.getAttribute("data") || "").split(".").pop();
+  if (v.localName === "AggregatedDataValue") {
+    const f = {};
+    for (const d of v.children) if (d.localName === "Data") f[d.getAttribute("property")] = [...d.children].map(dataValue).join(", ");
+    if ("Value" in f) return f.Value + (f.Unit ? " " + f.Unit : "");
+    return Object.entries(f).map(([k, x]) => k + "=" + x).join("; ") || shortType(v.getAttribute("type"));
+  }
+  return v.textContent;
+}
+const first = (o, p) => (o.data[p] || [])[0];
+const refId = r => r && r.startsWith("#") ? r.slice(1) : null;
+
+/* ------------------------------------------------------------- validate */
+function validate(model) {
+  const issues = [];
+  const add = (level, msg, ids = []) => issues.push({ level, msg, ids: ids.filter(Boolean) });
+  const root = model.root;
+  if (root.localName !== "Model") add("error", `Root element must be <Model>, found <${root.localName}>`);
+  if (!root.getAttribute("name")) add("error", "Model is missing the required 'name' attribute");
+  else if (!NAME_RE.test(root.getAttribute("name"))) add("error", `Model name '${root.getAttribute("name")}' is not a valid DEXPI name`);
+  if (!root.getAttribute("uri")) add("error", "Model is missing the required 'uri' attribute");
+
+  // imports -> model names
+  const prefixModel = {};
+  for (const im of model.imports) {
+    if (!im.prefix || !im.source) { add("error", "Import requires 'prefix' and 'source'"); continue; }
+    const m = (im.source.match(/\/([A-Za-z]+)\.xml$/) || [])[1];
+    prefixModel[im.prefix] = m || im.prefix;
+    const ver = (im.source.match(/\/(\d+\.\d+\.\d+)\//) || [])[1];
+    if (ver && ver !== "2.0.1") add("warning", `Import '${im.prefix}' references model version ${ver} (viewer targets 2.0.1)`);
+  }
+  if (!model.imports.some(i => /Plant\.xml$/.test(i.source || ""))) add("warning", "No import of the DEXPI Plant model");
+
+  // element structure
+  for (const el of root.getElementsByTagName("*")) {
+    const n = el.localName, par = el.parentElement && el.parentElement.localName;
+    if (n === "Object") {
+      if (!el.getAttribute("type")) add("error", "<Object> without 'type'", [el.getAttribute("id")]);
+      for (const c of el.children) if (!["Components", "Data", "References"].includes(c.localName))
+        add("error", `<${c.localName}> is not allowed inside <Object>`, [el.getAttribute("id")]);
+    } else if ((n === "Components" || n === "Data" || n === "References") && par === "Object" && !el.getAttribute("property"))
+      add("error", `<${n}> without 'property'`, [el.parentElement.getAttribute("id")]);
+  }
+
+  // ids
+  const seen = new Map();
+  for (const o of model.objects) if (o.id) {
+    seen.set(o.id, (seen.get(o.id) || 0) + 1);
+    if (!NAME_RE.test(o.id)) add("error", `ID '${o.id}' violates the DEXPI name syntax`, [o.id]);
+  }
+  for (const [id, n] of seen) if (n > 1) add("error", `Duplicate ID '${id}' (${n}×)`, [id]);
+
+  // references
+  for (const o of model.objects) for (const [p, list] of Object.entries(o.refs)) {
+    if (!list.length) add("error", `${o.id || o.short}.${p}: empty 'objects'`, [o.id]);
+    for (const r of list) {
+      if (r.startsWith("#")) { if (!model.byId.has(r.slice(1))) add("error", `${o.id || o.short}.${p}: dangling reference ${r}`, [o.id]); }
+      else if (!/^[A-Za-z_]*\/[A-Za-z_][\w.]*$/.test(r)) add("error", `${o.id || o.short}.${p}: '${r}' is neither an IDREF nor a nameReference`, [o.id]);
+    }
+  }
+
+  // metamodel conformance
+  const MM = window.DEXPI_METAMODEL && window.DEXPI_METAMODEL.classes;
+  if (!MM) add("info", "metamodel.js not loaded — class/property conformance checks skipped");
+  else {
+    const anc = new Map();
+    const ancestors = t => {
+      if (anc.has(t)) return anc.get(t);
+      const out = [], st = [t];
+      while (st.length) { const x = st.pop(); if (out.includes(x) || !MM[x]) continue; out.push(x); st.push(...MM[x][1]); }
+      anc.set(t, out); return out;
+    };
+    const canon = t => { const [p, rest] = [t.slice(0, t.indexOf("/")), t.slice(t.indexOf("/") + 1)]; return (prefixModel[p] || p) + "/" + rest; };
+    const findProp = (t, n) => { for (const a of ancestors(t)) if (MM[a][2][n]) return MM[a][2][n]; return null; };
+    const isA = (t, sup) => ancestors(t).includes(sup);
+    const KIND = { Components: "C", References: "R", Data: "D" }, KN = { C: "composition", R: "reference", D: "data" };
+    for (const o of model.objects) {
+      const id = o.id || "anonymous";
+      const pre = o.type.split("/")[0];
+      if (o.type.includes("/") && pre && !prefixModel[pre]) { add("error", `${id}: type prefix '${pre}' has no <Import>`, [o.id]); continue; }
+      const t = canon(o.type);
+      if (!MM[t]) { add("error", `${id}: unknown class ${o.type}`, [o.id]); continue; }
+      if (MM[t][0]) add("error", `${id}: class ${o.type} is abstract`, [o.id]);
+      const counts = {};
+      for (const c of o.el.children) {
+        const pn = c.getAttribute("property"); if (!pn || pn.includes("/")) continue;
+        const pr = findProp(t, pn);
+        if (!pr) { add("error", `${id} (${o.short}): property '${pn}' is not declared`, [o.id]); continue; }
+        if (pr[0] !== KIND[c.localName]) { add("error", `${id}: '${pn}' is a ${KN[pr[0]]} property but written as <${c.localName}>`, [o.id]); continue; }
+        let n = 0;
+        if (c.localName === "References") {
+          for (const r of (c.getAttribute("objects") || "").split(/\s+/).filter(Boolean)) {
+            n++;
+            const tg = model.byId.get(refId(r));
+            if (tg && MM[canon(tg.type)] && !isA(canon(tg.type), pr[1])) add("error", `${id}.${pn}: ${r} is a ${tg.short}, expected ${shortType(pr[1])}`, [o.id]);
+          }
+        } else {
+          for (const k of c.children) {
+            n++;
+            if (k.localName === "Object") {
+              const kt = canon(k.getAttribute("type") || "");
+              if (MM[kt] && !isA(kt, pr[1])) add("error", `${id}.${pn}: child ${k.getAttribute("id") || ""} (${shortType(kt)}) is not a ${shortType(pr[1])}`, [o.id]);
+            }
+          }
+        }
+        counts[pn] = (counts[pn] || 0) + n;
+        if (pr[3] != null && counts[pn] > pr[3]) add("error", `${id}: '${pn}' has ${counts[pn]} values, upper bound is ${pr[3]}`, [o.id]);
+      }
+      for (const a of ancestors(t)) for (const [pn, pr] of Object.entries(MM[a][2]))
+        if (pr[2] > 0 && !(counts[pn] >= pr[2])) add("error", `${id} (${o.short}): required property '${pn}' is missing (lower bound ${pr[2]})`, [o.id]);
+    }
+  }
+
+  // content quality (not violations, but limit what a viewer can show)
+  const referenced = new Set();
+  for (const o of model.objects) for (const l of Object.values(o.refs)) for (const r of l) if (refId(r)) referenced.add(refId(r));
+  const loose = model.objects.filter(o => o.short === "PipingNode" && !referenced.has(o.id));
+  if (loose.length) add("warning", `${loose.length} piping node(s) are not connected to any pipe`, loose.map(o => o.id));
+  const segs = model.objects.filter(o => o.short === "PipingNetworkSegment");
+  const noConn = segs.filter(s => !s.comps.Connections);
+  if (noConn.length) add("warning", `${noConn.length} piping segment(s) have no Connections — their items float unconnected`, noConn.map(s => s.id));
+  const noTag = model.objects.filter(o => o.type.includes("ProcessEquipment.") && !/Nozzle$/.test(o.short) && o.parent && o.parent.short === "PlantModel" && !first(o, "TagName"));
+  if (noTag.length) add("warning", `${noTag.length} equipment item(s) have no TagName`, noTag.map(o => o.id));
+  const pifs = model.objects.filter(o => o.short === "ProcessInstrumentationFunction");
+  const pifBare = pifs.filter(o => !first(o, "ProcessInstrumentationFunctionCategory") && !first(o, "ProcessInstrumentationFunctionNumber"));
+  if (pifBare.length) add("warning", `${pifBare.length} instrumentation function(s) have no category/letters/number`, pifBare.map(o => o.id));
+  const eng = model.roots.find(o => o.short === "EngineeringModel");
+  if (!eng) add("warning", "No Core/EngineeringModel root object");
+  else if (!eng.comps.Diagram) add("info", "No Diagram component — the file carries no drawing geometry, so the view is auto-laid-out from topology");
+  else add("info", "File contains Core/Diagram graphics; this viewer shows the topology view (diagram geometry is not rendered)");
+  return issues;
+}
+
+/* --------------------------------------------------------- graph build */
+const EQUIP_SHAPES = { Tank: "tank", Vessel: "vessel", Column: "column", ProcessColumn: "column", Chamber: "vessel",
+  CentrifugalPump: "pump", ReciprocatingPump: "pump", Pump: "pump", RotaryPump: "pump", Compressor: "pump", CentrifugalCompressor: "pump",
+  PlateHeatExchanger: "hx", TubularHeatExchanger: "hx", HeatExchanger: "hx", AirCoolingSystem: "hx" };
+
+function buildGraph(model) {
+  const nodes = [], edges = [], nodeOf = new Map();
+  const mk = (o, kind) => { const n = { id: o ? (o.id || "anon" + nodes.length) : "end" + nodes.length, obj: o, kind, edges: [] }; nodes.push(n); if (o) nodeOf.set(o, n); return n; };
+  const pkg = o => (o.type.split("/")[1] || "").split(".")[0];
+  for (const o of model.objects) {
+    const p = pkg(o);
+    if (/Diagram/.test(o.type)) continue;
+    if (p === "ProcessEquipment") {
+      if (/Nozzle$/.test(o.short)) continue;
+      if (!o.parent || pkg(o.parent) !== "ProcessEquipment") mk(o, "equipment");
+    } else if (p === "Piping" && o.prop === "Items") mk(o, "piping");
+    else if (p === "Instrumentation") {
+      if (o.short === "ProcessInstrumentationFunction") mk(o, "instrument");
+      else if (o.short === "ProcessSignalGeneratingFunction") mk(o, "sensor");
+      else if (o.short === "ActuatingFunction") mk(o, "actuator");
+    }
+  }
+  const resolve = id => { let o = model.byId.get(id); while (o && !nodeOf.has(o)) o = o.parent; return o ? nodeOf.get(o) : null; };
+  const addEdge = (a, b, kind, obj, extra = {}) => {
+    if (!a || !b || a === b) return;
+    const e = { a, b, kind, obj, ...extra }; edges.push(e); a.edges.push(e); b.edges.push(e);
+  };
+  const ends = (o, s) => { const id = refId((o.refs[s + "Item"] || o.refs[s + "Node"] || [])[0]); return id ? resolve(id) : null; };
+  for (const o of model.objects) {
+    if (o.short === "PipingNetworkSegment") {
+      const seg = o, sys = o.parent;
+      if (o.comps.Connections) {
+        for (const c of o.comps.Connections) {
+          let a = ends(c, "Source"), b = ends(c, "Target");
+          if (!a && !b) continue;
+          if (!a) a = mk(null, "end"); if (!b) b = mk(null, "end");
+          addEdge(a, b, "pipe", c, { seg, sys });
+        }
+      } else {
+        // no explicit connections: chain source -> items -> target as an implied line
+        const chain = [ends(o, "Source"), ...(o.comps.Items || []).map(i => nodeOf.get(i)), ends(o, "Target")].filter(Boolean);
+        for (let i = 1; i < chain.length; i++) addEdge(chain[i - 1], chain[i], "implied", o, { seg, sys });
+      }
+    }
+    for (const loc of ["SensingLocation", "ActuatingLocation"]) if (o.refs[loc] && nodeOf.has(o))
+      addEdge(resolve(refId(o.refs[loc][0])), nodeOf.get(o), "sensing", o);
+    if (o.refs.Source && o.refs.Target && pkg(o) === "Instrumentation")
+      addEdge(resolve(refId(o.refs.Source[0])), resolve(refId(o.refs.Target[0])), o.short === "MeasuringLineFunction" ? "measuring" : "signal", o);
+  }
+  for (const n of nodes) Object.assign(n, symbolSize(n));
+  return { nodes, edges, nodeOf };
+}
+
+/* -------------------------------------------------------------- labels */
+function labelOf(n) {
+  const o = n.obj;
+  if (!o) return { main: "", sub: "line end" };
+  const tag = first(o, "TagName") || first(o, "SubTagName") || first(o, "PipingComponentName") || first(o, "PipingComponentNumber") || first(o, "LineNumber");
+  if (n.kind === "instrument") {
+    const cat = first(o, "ProcessInstrumentationFunctionCategory") || "";
+    const fn = first(o, "ProcessInstrumentationFunctions") || "";
+    const num = first(o, "ProcessInstrumentationFunctionNumber") || "";
+    return { inner: (cat + fn) || "", inner2: num, main: (cat + fn || num) ? "" : o.id, sub: "" };
+  }
+  if (n.kind === "sensor") return { main: first(o, "ProcessSignalGeneratingFunctionNumber") || "", sub: "" };
+  if (n.kind === "piping" && /Tee$/.test(o.short) && !tag) return { main: "", sub: "" };   // junction dots stay unlabeled (id in tooltip)
+  return { main: tag || o.id || o.short, sub: tag ? o.id : o.short };
+}
+
+/* ------------------------------------------------------------- symbols */
+function symbolSize(n) {
+  const s = n.obj ? n.obj.short : "";
+  switch (n.kind) {
+    case "equipment": { const sh = EQUIP_SHAPES[s] || "box"; return sh === "pump" || sh === "hx" ? { w: 44, h: 44, sh } : sh === "column" ? { w: 44, h: 90, sh } : { w: 84, h: 56, sh }; }
+    case "piping": return /Tee$/.test(s) ? { w: 8, h: 8, sh: "tee" } : /Valve|Cock|Damper/.test(s) ? { w: 26, h: 16, sh: "valve" }
+      : /OffPageConnector/.test(s) ? { w: 34, h: 18, sh: "opc" } : /Reducer/.test(s) ? { w: 16, h: 14, sh: "reducer" }
+      : /Flange|Blind/.test(s) ? { w: 6, h: 18, sh: "flange" } : { w: 28, h: 16, sh: "gen" };
+    case "instrument": return { w: 36, h: 36, sh: "instr" };
+    case "sensor": return { w: 10, h: 10, sh: "sensor" };
+    case "actuator": return { w: 14, h: 14, sh: "act" };
+    default: return { w: 10, h: 10, sh: "end" };
+  }
+}
+function symbolSvg(n) {
+  const { w, h, sh } = n, s = n.obj ? n.obj.short : "", hw = w / 2, hh = h / 2;
+  const bow = `M${-hw},${-hh + 2} L${hw},${hh - 2} L${hw},${-hh + 2} L${-hw},${hh - 2} Z`;
+  switch (sh) {
+    case "tank": return `<path class="s-eq" d="M${-hw},${-hh + 8} Q0,${-hh - 6} ${hw},${-hh + 8} L${hw},${hh} L${-hw},${hh} Z"/>`;
+    case "vessel": return `<rect class="s-eq" x="${-hw}" y="${-hh}" width="${w}" height="${h}" rx="${hh}"/>`;
+    case "column": return `<rect class="s-eq" x="${-hw}" y="${-hh}" width="${w}" height="${h}" rx="${hw}"/><path class="s-eq" style="fill:none" d="M${-hw + 4},-14 H${hw - 4} M${-hw + 4},0 H${hw - 4} M${-hw + 4},14 H${hw - 4}"/>`;
+    case "pump": return `<circle class="s-eq" r="${hw}"/><path class="s-eq" style="fill:none" d="M${-hw * .5},${-hh * .75} L${hw},0 L${-hw * .5},${hh * .75}"/>`;
+    case "hx": return `<circle class="s-eq" r="${hw}"/><path class="s-eq" style="fill:none" d="M${-hw},0 l8,-8 l8,16 l8,-16 l8,16 l8,-8"/>`;
+    case "box": return `<rect class="s-eq" x="${-hw}" y="${-hh}" width="${w}" height="${h}" rx="6"/>`;
+    case "valve": {
+      let extra = "";
+      if (/Operated|Control/.test(s)) extra = `<path class="s-v" d="M0,0 V-14"/><path class="s-v" d="M-9,-14 A9,9 0 0 1 9,-14 Z"/>`;
+      else if (/Check/.test(s)) return `<path class="s-v" d="${bow}"/><path class="s-vf" d="M0,0 L${hw},${hh - 2} L${hw},${-hh + 2} Z"/>`;
+      else if (/Ball/.test(s)) extra = `<circle class="s-vf" r="3.5"/>`;
+      else if (/Globe/.test(s)) extra = `<circle class="s-vf" r="2.5"/>`;
+      else if (/Butterfly/.test(s)) extra = `<path class="s-v" d="M0,${-hh} V${hh}"/>`;
+      else if (/Safety|Relief/.test(s)) extra = `<path class="s-v" d="M0,0 V-6 l-4,-2 l8,-3 l-8,-3 l8,-3"/>`;
+      return `<path class="s-v" d="${bow}"/>` + extra;
+    }
+    case "tee": return `<circle class="s-dot" r="3.5"/>`;
+    case "opc": return `<path class="s-gen" d="M${-hw},${-hh} H${hw - 8} L${hw},0 L${hw - 8},${hh} H${-hw} Z"/>`;
+    case "reducer": return `<path class="s-v" d="M${-hw},${-hh} L${hw},${-hh / 2} L${hw},${hh / 2} L${-hw},${hh} Z"/>`;
+    case "flange": return `<rect class="s-vf" x="${-hw / 2}" y="${-hh}" width="${hw}" height="${h}"/>`;
+    case "instr": return `<circle class="s-ins" r="${hw}"/>`;
+    case "sensor": return `<circle class="s-ins" r="${hw}"/>`;
+    case "act": return `<rect class="s-ins" x="${-hw}" y="${-hh}" width="${w}" height="${h}"/>`;
+    case "end": return `<circle class="s-end" r="${hw - 1}"/>`;
+    default: return `<rect class="s-gen" x="${-hw}" y="${-hh}" width="${w}" height="${h}" rx="3"/><text class="in" style="font-size:7px">${esc(s.slice(0, 6))}</text>`;
+  }
+}
+
+/* --------------------------------------------------------------- layout */
+// Layered (Sugiyama-style) layout per connected component: cycle breaking, longest-path
+// layering, dummy nodes for long edges, barycenter ordering, and balanced y placement.
+function layout(G, opt) {
+  const vis = n => opt.instr || !["instrument", "sensor", "actuator"].includes(n.kind);
+  const nodes = G.nodes.filter(vis);
+  const nset = new Set(nodes);
+  const edges = G.edges.filter(e => nset.has(e.a) && nset.has(e.b));
+  for (const n of nodes) n.adj = [];
+  for (const e of edges) { e.a.adj.push(e.b); e.b.adj.push(e.a); e.route = null; }
+  // connected components
+  const comps = [], seen = new Set();
+  for (const n of nodes) {
+    if (seen.has(n)) continue;
+    const c = [], st = [n]; seen.add(n);
+    while (st.length) { const x = st.pop(); c.push(x); for (const y of x.adj) if (!seen.has(y)) { seen.add(y); st.push(y); } }
+    comps.push(c);
+  }
+  const isolated = comps.filter(c => c.length === 1 && !opt.keepIsoInFlow).map(c => c[0]);
+  const blocks = comps.filter(c => c.length > 1).map(c => layoutComp(c, edges.filter(e => c.includes(e.a))));
+  // shelf packing
+  blocks.sort((p, q) => q.h - p.h || q.w - p.w);
+  const GAP = 70;
+  const area = blocks.reduce((s, b) => s + (b.w + GAP) * (b.h + GAP), 0);
+  const maxW = Math.max(1400, Math.sqrt(area) * 1.6, ...blocks.map(b => b.w));
+  let x = 0, y = 0, rowH = 0, totalW = 0;
+  for (const b of blocks) {
+    if (x > 0 && x + b.w > maxW) { x = 0; y += rowH + GAP; rowH = 0; }
+    b.ox = x; b.oy = y; x += b.w + GAP; rowH = Math.max(rowH, b.h); totalW = Math.max(totalW, x - GAP);
+    for (const n of b.nodes) { n.x += b.ox; n.y += b.oy; }
+    for (const e of b.edges) e.route = e.route.map(([px, py]) => [px + b.ox, py + b.oy]);
+  }
+  y += blocks.length ? rowH + GAP : 0;
+  const groups = [];
+  if (isolated.length && opt.iso) {
+    isolated.sort((p, q) => p.kind.localeCompare(q.kind) || (p.obj?.short || "").localeCompare(q.obj?.short || "") || p.id.localeCompare(q.id, undefined, { numeric: true }));
+    const cell = 96, cols = Math.max(4, Math.floor(Math.max(totalW, 900) / cell));
+    const top = y + 30;
+    isolated.forEach((n, i) => { n.x = (i % cols) * cell + cell / 2; n.y = top + Math.floor(i / cols) * 92 + 40; });
+    const rows = Math.ceil(isolated.length / cols);
+    groups.push({ title: `Unconnected items (${isolated.length})`, x: -10, y: y, w: Math.min(cols, isolated.length) * cell + 20, h: rows * 92 + 50 });
+  }
+  const shown = nodes.filter(n => !isolated.includes(n) || opt.iso);
+  return { nodes: shown, edges, groups };
+}
+
+function layoutComp(cn, ce) {
+  const LAYER_GAP = 64, NODE_GAP = 30, LABEL_H = 26;
+  const idx = new Map(cn.map((n, i) => [n, i]));
+  // unique directed edges
+  const out = cn.map(() => new Set());
+  for (const e of ce) out[idx.get(e.a)].add(idx.get(e.b));
+  // cycle breaking (iterative DFS); back edges are reversed
+  const state = new Array(cn.length).fill(0), dag = cn.map(() => new Set());
+  const order = [...cn.keys()].sort((p, q) => cn[q].edges.length - cn[p].edges.length);
+  const indeg0 = order.filter(i => !ce.some(e => e.b === cn[i]));
+  for (const s of [...indeg0, ...order]) {
+    if (state[s]) continue;
+    const st = [[s, [...out[s]]]]; state[s] = 1;
+    while (st.length) {
+      const top = st[st.length - 1];
+      if (!top[1].length) { state[top[0]] = 2; st.pop(); continue; }
+      const v = top[1].shift();
+      if (state[v] === 1) dag[v].add(top[0]);            // back edge -> reverse
+      else { dag[top[0]].add(v); if (!state[v]) { state[v] = 1; st.push([v, [...out[v]]]); } }
+    }
+  }
+  for (let i = 0; i < cn.length; i++) for (const v of dag[i]) if (dag[v].has(i)) dag[v].delete(i);
+  // longest path layering
+  const indeg = cn.map(() => 0); for (const s of dag) for (const v of s) indeg[v]++;
+  const q = [...cn.keys()].filter(i => !indeg[i]), topo = [], layer = cn.map(() => 0);
+  while (q.length) { const u = q.shift(); topo.push(u); for (const v of dag[u]) { layer[v] = Math.max(layer[v], layer[u] + 1); if (!--indeg[v]) q.push(v); } }
+  // pull sources next to their successors
+  const preds = cn.map(() => []); for (let u = 0; u < cn.length; u++) for (const v of dag[u]) preds[v].push(u);
+  for (const u of [...topo].reverse()) if (!preds[u].length && dag[u].size) layer[u] = Math.min(...[...dag[u]].map(v => layer[v])) - 1;
+  const minL = Math.min(...layer); for (let i = 0; i < layer.length; i++) layer[i] -= minL;
+  // virtual graph with dummies
+  const V = cn.map((n, i) => ({ n, layer: layer[i], w: n.w, h: n.h + LABEL_H, up: [], down: [] }));
+  const chains = new Map(); // "u>v" -> [vertex indices]
+  for (let u = 0; u < cn.length; u++) for (const v of dag[u]) {
+    const ch = [u];
+    let prev = u;
+    for (let l = layer[u] + 1; l < layer[v]; l++) { V.push({ layer: l, w: 0, h: 6, up: [], down: [] }); const d = V.length - 1; V[prev].down.push(d); V[d].up.push(prev); ch.push(d); prev = d; }
+    V[prev].down.push(v); V[v].up.push(prev); ch.push(v);
+    chains.set(u + ">" + v, ch);
+  }
+  const nl = Math.max(...V.map(v => v.layer)) + 1;
+  const L = Array.from({ length: nl }, () => []);
+  // initial order: DFS from sources
+  const vis = new Set();
+  const dfs = s => { const st = [s]; while (st.length) { const x = st.pop(); if (vis.has(x)) continue; vis.add(x); L[V[x].layer].push(x); for (const y of [...V[x].down].reverse()) st.push(y); } };
+  V.forEach((v, i) => { if (!v.up.length) dfs(i); }); V.forEach((_, i) => dfs(i));
+  const pos = new Array(V.length);
+  const setPos = () => L.forEach(l => l.forEach((x, i) => pos[x] = i));
+  setPos();
+  for (let it = 0; it < 12; it++) {
+    const down = it % 2 === 0;
+    const range = down ? [...Array(nl).keys()].slice(1) : [...Array(nl).keys()].reverse().slice(1);
+    for (const li of range) {
+      const bc = x => { const nb = down ? V[x].up : V[x].down; return nb.length ? nb.reduce((s, y) => s + pos[y], 0) / nb.length : pos[x]; };
+      L[li].sort((a, b) => bc(a) - bc(b)); L[li].forEach((x, i) => pos[x] = i);
+    }
+  }
+  // x by layer
+  const lx = [], lw = L.map(l => Math.max(8, ...l.map(x => V[x].w)));
+  let acc = 0; for (let i = 0; i < nl; i++) { lx[i] = acc + lw[i] / 2; acc += lw[i] + LAYER_GAP; }
+  // y: initial stacking, then balanced relaxation toward neighbour mean
+  const Y = new Array(V.length);
+  L.forEach(l => { let y = 0; l.forEach(x => { Y[x] = y + V[x].h / 2; y += V[x].h + NODE_GAP; }); });
+  const sep = (a, b) => (V[a].h + V[b].h) / 2 + (V[a].w && V[b].w ? NODE_GAP : 10);
+  for (let it = 0; it < 24; it++) {
+    const down = it % 2 === 0;
+    const seq = down ? [...Array(nl).keys()] : [...Array(nl).keys()].reverse();
+    for (const li of seq) {
+      const l = L[li]; if (!l.length) continue;
+      const d = l.map(x => { const nb = [...V[x].up, ...V[x].down]; return nb.length ? nb.reduce((s, y) => s + Y[y], 0) / nb.length : Y[x]; });
+      const a = [...d], b = [...d];
+      for (let i = 1; i < l.length; i++) a[i] = Math.max(d[i], a[i - 1] + sep(l[i - 1], l[i]));
+      for (let i = l.length - 2; i >= 0; i--) b[i] = Math.min(d[i], b[i + 1] - sep(l[i], l[i + 1]));
+      l.forEach((x, i) => Y[x] = (a[i] + b[i]) / 2);
+    }
+  }
+  // normalise
+  let minY = Infinity, maxY = -Infinity;
+  V.forEach((v, i) => { minY = Math.min(minY, Y[i] - v.h / 2); maxY = Math.max(maxY, Y[i] + v.h / 2); });
+  V.forEach((v, i) => { v.x = lx[v.layer]; v.y = Y[i] - minY - (v.n ? LABEL_H / 2 : 0); if (v.n) { v.n.x = v.x; v.n.y = v.y; } });
+  // routes: orthogonal elbows through dummy points
+  for (const e of ce) {
+    const u = idx.get(e.a), v = idx.get(e.b);
+    let ch = chains.get(u + ">" + v), rev = false;
+    if (!ch) { ch = chains.get(v + ">" + u); rev = true; }
+    if (!ch) { e.route = [[e.a.x, e.a.y], [e.b.x, e.b.y]]; continue; }
+    const pts = [];
+    for (let i = 0; i < ch.length - 1; i++) {
+      const p = V[ch[i]], r = V[ch[i + 1]];
+      const x1 = p.x + (p.w ? p.n.w / 2 : 0), x2 = r.x - (r.w ? r.n.w / 2 : 0), xm = (x1 + x2) / 2;
+      if (i === 0) pts.push([x1, p.y]);
+      if (Math.abs(p.y - r.y) < .5) pts.push([x2, r.y]);
+      else pts.push([xm, p.y], [xm, r.y], [x2, r.y]);
+    }
+    e.route = rev ? pts.reverse() : pts;
+    e.reversed = rev;
+  }
+  return { nodes: cn, edges: ce, w: acc - LAYER_GAP, h: maxY - minY };
+}
+
+/* --------------------------------------------------------------- render */
+const S = { model: null, graph: null, issues: [], view: null, k: 1, tx: 0, ty: 0, sel: null, fileName: "" };
+const opt = () => ({ instr: $("#optInstr").checked, iso: $("#optIso").checked });
+
+function render() {
+  const G = S.graph; if (!G) return;
+  const L = layout(G, opt());
+  S.view = L;
+  const parts = [];
+  for (const g of L.groups) parts.push(`<rect class="grp-box" x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" rx="8"/><text class="grp-title" x="${g.x + 10}" y="${g.y + 18}">${esc(g.title)}</text>`);
+  L.edges.forEach((e, i) => {
+    if (!e.route) return;
+    const d = "M" + e.route.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" L");
+    const mk = e.kind === "pipe" || e.kind === "implied" ? "arr" : e.kind === "signal" ? "arrS" : "arrM";
+    parts.push(`<path class="edge ${e.kind}" data-e="${i}" d="${d}" marker-end="url(#${mk})"/><path class="edge-hit" data-e="${i}" d="${d}"><title>${esc(edgeTitle(e))}</title></path>`);
+  });
+  L.nodes.forEach(n => {
+    const lb = labelOf(n);
+    let t = `<g class="node" data-n="${esc(n.id)}" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})"><title>${esc((n.obj ? n.obj.type + "\n" + (n.obj.id || "") : "Unterminated pipe end"))}</title>`;
+    t += `<rect class="sel-ring" x="${-n.w / 2 - 4}" y="${-n.h / 2 - 4}" width="${n.w + 8}" height="${n.h + 8}" rx="5" fill="none" stroke="none"/>`;
+    t += symbolSvg(n);
+    if (lb.inner) t += `<text class="in" y="${lb.inner2 ? -6 : 0}">${esc(lb.inner)}</text>`;
+    if (lb.inner2) t += `<text class="in" y="7" style="font-weight:400">${esc(lb.inner2)}</text>`;
+    if (n.kind === "instrument" && !lb.inner && !lb.inner2) t += `<text class="in" style="font-size:8px;font-weight:400;fill:var(--muted)">PIF</text>`;
+    const ly = n.h / 2 + 4;
+    if (lb.main) t += `<text class="lbl" y="${ly}">${esc(lb.main)}</text>`;
+    if (lb.sub) t += `<text class="sub" y="${ly + (lb.main ? 12 : 0)}">${esc(lb.sub)}</text>`;
+    parts.push(t + "</g>");
+  });
+  $("#vp").innerHTML = parts.join("");
+  $("#svg").classList.toggle("hidden-labels", !$("#optLabels").checked);
+  S.nodeById = new Map(L.nodes.map(n => [n.id, n]));
+  if (S.sel) select(S.sel, false); else $("#svg").classList.remove("focus");
+  const cnt = k => G.edges.filter(e => e.kind === k).length;
+  $("#status").textContent = `${S.fileName} — ${L.nodes.length} symbols, ${cnt("pipe")} pipes, ${cnt("implied")} implied, ${cnt("measuring") + cnt("sensing") + cnt("signal")} instrument lines`;
+}
+function edgeTitle(e) {
+  const o = e.obj;
+  if (e.kind === "pipe" || e.kind === "implied") return `${e.kind === "pipe" ? "Pipe" : "Segment (no Connections)"} ${o.id || ""}\nsegment ${e.seg?.id || ""} · system ${e.sys?.id || ""}`;
+  return `${o.short} ${o.id || ""}`;
+}
+
+/* ----------------------------------------------------------- pan / zoom */
+function applyT() { $("#vp").setAttribute("transform", `translate(${S.tx},${S.ty}) scale(${S.k})`); }
+function bounds() {
+  const L = S.view; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const n of L.nodes) { x0 = Math.min(x0, n.x - n.w / 2 - 40); x1 = Math.max(x1, n.x + n.w / 2 + 40); y0 = Math.min(y0, n.y - n.h / 2 - 20); y1 = Math.max(y1, n.y + n.h / 2 + 40); }
+  for (const g of L.groups) { x0 = Math.min(x0, g.x); y0 = Math.min(y0, g.y); x1 = Math.max(x1, g.x + g.w); y1 = Math.max(y1, g.y + g.h); }
+  return isFinite(x0) ? { x0, y0, x1, y1 } : { x0: 0, y0: 0, x1: 100, y1: 100 };
+}
+function fit() {
+  if (!S.view) return;
+  const b = bounds(), r = $("#svg").getBoundingClientRect();
+  S.k = Math.min(r.width / (b.x1 - b.x0), r.height / (b.y1 - b.y0), 2.5);
+  S.tx = (r.width - (b.x1 - b.x0) * S.k) / 2 - b.x0 * S.k; S.ty = (r.height - (b.y1 - b.y0) * S.k) / 2 - b.y0 * S.k; applyT();
+}
+function zoomAt(f, cx, cy) { const k = Math.max(.05, Math.min(12, S.k * f)); S.tx = cx - (cx - S.tx) * k / S.k; S.ty = cy - (cy - S.ty) * k / S.k; S.k = k; applyT(); }
+function centerOn(n) { const r = $("#svg").getBoundingClientRect(); if (S.k < 1) S.k = 1.2; S.tx = r.width / 2 - n.x * S.k; S.ty = r.height / 2 - n.y * S.k; applyT(); }
+(() => {
+  const svg = $("#svg"); let drag = null, moved = false;
+  svg.addEventListener("wheel", ev => { ev.preventDefault(); const r = svg.getBoundingClientRect(); zoomAt(Math.exp(-ev.deltaY * .0015), ev.clientX - r.left, ev.clientY - r.top); }, { passive: false });
+  svg.addEventListener("pointerdown", ev => { drag = { x: ev.clientX, y: ev.clientY, tx: S.tx, ty: S.ty }; moved = false; });
+  svg.addEventListener("pointermove", ev => {
+    if (!drag) return; const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+    if (!moved && Math.hypot(dx, dy) > 3) { moved = true; svg.setPointerCapture(ev.pointerId); svg.classList.add("panning"); }
+    if (moved) { S.tx = drag.tx + dx; S.ty = drag.ty + dy; applyT(); }
+  });
+  svg.addEventListener("pointerup", ev => {
+    svg.classList.remove("panning"); const wasDrag = moved; drag = null; if (wasDrag) return;
+    const ng = ev.target.closest(".node"), eg = ev.target.closest("[data-e]");
+    if (ng) select({ node: ng.dataset.n });
+    else if (eg) select({ edge: +eg.dataset.e });
+    else { S.sel = null; svg.classList.remove("focus"); svg.querySelectorAll(".hl,.sel").forEach(x => x.classList.remove("hl", "sel")); }
+  });
+  $("#zIn").onclick = () => { const r = svg.getBoundingClientRect(); zoomAt(1.25, r.width / 2, r.height / 2); };
+  $("#zOut").onclick = () => { const r = svg.getBoundingClientRect(); zoomAt(.8, r.width / 2, r.height / 2); };
+  $("#zFit").onclick = fit;
+  window.addEventListener("keydown", ev => {
+    if (ev.target.matches("input")) return;
+    if (ev.key === "f" || ev.key === "F") fit(); else if (ev.key === "+" || ev.key === "=") $("#zIn").click(); else if (ev.key === "-") $("#zOut").click();
+  });
+  window.addEventListener("resize", () => S.view && fit());
+})();
+
+/* ------------------------------------------------------------ selection */
+function select(sel, show = true) {
+  S.sel = sel;
+  const svg = $("#svg"); svg.querySelectorAll(".hl,.sel").forEach(x => x.classList.remove("hl", "sel"));
+  const L = S.view; let obj = null, hlEdges = [], hlNodes = [];
+  if (sel.node) {
+    const n = S.nodeById.get(sel.node); if (!n) return;
+    obj = n.obj; hlNodes.push(n);
+    for (const e of n.edges) if (L.edges.includes(e)) { hlEdges.push(e); hlNodes.push(e.a, e.b); }
+  } else if (sel.edge != null) {
+    const e = L.edges[sel.edge]; if (!e) return; obj = e.obj;
+    // highlight the whole piping network system for pipes
+    hlEdges = e.sys ? L.edges.filter(x => x.sys === e.sys) : [e];
+    for (const x of hlEdges) hlNodes.push(x.a, x.b);
+  }
+  svg.classList.add("focus");
+  for (const e of hlEdges) svg.querySelectorAll(`.edge[data-e="${L.edges.indexOf(e)}"]`).forEach(x => x.classList.add("hl"));
+  for (const n of hlNodes) { const g = svg.querySelector(`.node[data-n="${CSS.escape(n.id)}"]`); if (g) g.classList.add("hl"); }
+  if (sel.node) { const g = svg.querySelector(`.node[data-n="${CSS.escape(sel.node)}"]`); if (g) g.classList.add("sel"); }
+  if (show) { inspect(obj, sel); tab("props"); }
+}
+function selectObject(id) {
+  const o = S.model.byId.get(id); if (!o) return;
+  let p = o; while (p && !S.graph.nodeOf.has(p)) p = p.parent;
+  const n = p && S.graph.nodeOf.get(p);
+  if (n && S.nodeById.has(n.id)) { select({ node: n.id }, false); centerOn(n); }
+  else if (S.view) {
+    // maybe it is an edge object (pipe / segment / signal line) or contains one
+    const i = S.view.edges.findIndex(e => e.obj === o || e.seg === o || e.sys === o);
+    if (i >= 0) { select({ edge: i }, false); const e = S.view.edges[i]; centerOn({ x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 }); }
+  }
+  inspect(o); tab("props");
+}
+
+/* ------------------------------------------------------------ inspector */
+function inspect(o, sel) {
+  const P = $("#pane-props");
+  if (!o) { P.innerHTML = `<h3>Unterminated pipe end</h3><p class="muted">A Pipe whose SourceItem/TargetItem is not set. The line ends here in the model.</p>` + (sel?.node ? connList(S.nodeById.get(sel.node)) : ""); return; }
+  const ref = id => `<a class="ref" data-id="${esc(id)}">${esc(id)}</a>`;
+  let h = `<h3>${esc(o.short)}</h3><table class="kv"><tr><td>Type</td><td class="mono">${esc(o.type)}</td></tr><tr><td>ID</td><td class="mono">${esc(o.id || "—")}</td></tr>`;
+  if (o.name) h += `<tr><td>Name</td><td>${esc(o.name)}</td></tr>`;
+  const chain = []; for (let p = o.parent; p; p = p.parent) chain.unshift(p);
+  if (chain.length) h += `<tr><td>Path</td><td>${chain.map(p => p.id ? ref(p.id) : esc(p.short)).join(" › ")}${o.prop ? ` <span class="muted">.${esc(o.prop)}</span>` : ""}</td></tr>`;
+  h += `</table>`;
+  const data = Object.entries(o.data);
+  h += `<h3>Data</h3>` + (data.length ? `<table class="kv">${data.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v.join(", "))}</td></tr>`).join("")}</table>` : `<p class="muted">No data properties.</p>`);
+  const refs = Object.entries(o.refs);
+  if (refs.length) h += `<h3>References</h3><table class="kv">${refs.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v.map(r => refId(r) ? ref(refId(r)) : esc(r)).join(" ")}</td></tr>`).join("")}</table>`;
+  const comps = Object.entries(o.comps);
+  if (comps.length) h += `<h3>Components</h3><table class="kv">${comps.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v.map(c => c.id ? ref(c.id) + ` <span class="muted">${esc(c.short)}</span>` : esc(c.short)).join("<br>")}</td></tr>`).join("")}</table>`;
+  const back = S.model.objects.filter(x => Object.values(x.refs).some(l => l.includes("#" + o.id)));
+  if (o.id && back.length) h += `<h3>Referenced by</h3>${back.slice(0, 40).map(x => (x.id ? ref(x.id) : esc(x.short)) + ` <span class="muted">${esc(x.short)}</span>`).join("<br>")}${back.length > 40 ? `<br><span class="muted">…${back.length - 40} more</span>` : ""}`;
+  if (sel?.node) h += connList(S.nodeById.get(sel.node));
+  const iss = S.issues.filter(i => o.id && i.ids.includes(o.id));
+  if (iss.length) h += `<h3>Issues</h3><ul class="issues">${iss.map(issueLi).join("")}</ul>`;
+  P.innerHTML = h;
+}
+function connList(n) {
+  if (!n) return "";
+  const es = n.edges.filter(e => S.view.edges.includes(e));
+  if (!es.length) return `<h3>Connections</h3><p class="muted">Not connected.</p>`;
+  return `<h3>Connections (${es.length})</h3>` + es.map(e => {
+    const other = e.a === n ? e.b : e.a, dir = e.a === n ? "→" : "←";
+    return `${dir} <span class="muted">${esc(e.kind)}</span> ${e.obj?.id ? `<a class="ref" data-id="${esc(e.obj.id)}">${esc(e.obj.id)}</a>` : ""} ${dir} ${other.obj?.id ? `<a class="ref" data-id="${esc(other.obj.id)}">${esc(other.obj.id)}</a>` : "<span class='muted'>open end</span>"}`;
+  }).join("<br>");
+}
+document.addEventListener("click", ev => { const a = ev.target.closest("a.ref"); if (a) { ev.preventDefault(); selectObject(a.dataset.id); } });
+
+/* ----------------------------------------------------------- side panes */
+function tab(name) { document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === name)); document.querySelectorAll(".pane").forEach(p => p.classList.toggle("on", p.id === "pane-" + name)); }
+document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => tab(b.dataset.tab));
+function issueLi(i) {
+  const ids = i.ids.slice(0, 6).map(id => `<a class="ref" data-id="${esc(id)}">${esc(id)}</a>`).join(" ") + (i.ids.length > 6 ? ` <span class="muted">+${i.ids.length - 6}</span>` : "");
+  return `<li class="${i.level}"><span class="lv">${i.level === "error" ? "✕" : i.level === "warning" ? "!" : "i"}</span><span>${esc(i.msg)}${ids ? "<br>" + ids : ""}</span></li>`;
+}
+function renderCheck() {
+  const m = S.model, I = S.issues, ne = I.filter(i => i.level === "error").length, nw = I.filter(i => i.level === "warning").length;
+  const mm = !!window.DEXPI_METAMODEL;
+  let h = `<h3>Conformance — DEXPI 2.0.1</h3><p>${ne ? `<span class="badge err">${ne} error${ne > 1 ? "s" : ""}</span>` : `<span class="badge ok">${mm ? "Conforms" : "Structurally valid"}</span>`} ${nw ? `<span class="badge warn">${nw} warning${nw > 1 ? "s" : ""}</span>` : ""}</p>`;
+  h += `<table class="kv"><tr><td>Model</td><td class="mono">${esc(m.name)}</td></tr><tr><td>URI</td><td class="mono">${esc(m.uri)}</td></tr>${m.imports.map(i => `<tr><td>Import ${esc(i.prefix)}</td><td class="mono">${esc(i.source)}</td></tr>`).join("")}`;
+  const eng = m.roots.find(o => o.short === "EngineeringModel");
+  if (eng) for (const k of ["OriginatingSystemName", "OriginatingSystemVendorName", "OriginatingSystemVersion", "ExportDateTime"]) h += `<tr><td>${k}</td><td>${first(eng, k) ? esc(first(eng, k)) : '<span class="muted">— missing</span>'}</td></tr>`;
+  h += `</table><p class="muted">Checks: XML well-formedness, exchange-format structure, ID/IDREF integrity${mm ? ", class & property conformance, multiplicities and reference types against the Core/Plant 2.0.1 metamodel" : ""}. XSD validation is available via <span class="mono">tools/validate.py</span>.</p>`;
+  h += `<h3>Issues (${I.length})</h3>` + (I.length ? `<ul class="issues">${I.map(issueLi).join("")}</ul>` : `<p class="muted">None.</p>`);
+  const types = {}; for (const o of m.objects) types[o.type] = (types[o.type] || 0) + 1;
+  h += `<h3>Contents (${m.objects.length} objects)</h3><table class="kv stats">${Object.entries(types).sort((a, b) => b[1] - a[1]).map(([t, n]) => `<tr><td class="mono" style="width:auto">${esc(t)}</td><td>${n}</td></tr>`).join("")}</table>`;
+  $("#pane-check").innerHTML = h;
+}
+function renderTree() {
+  const node = o => {
+    const label = `${o.id ? `<a class="ref" data-id="${esc(o.id)}">${esc(o.id)}</a>` : ""} <span class="muted">${esc(o.short)}</span>`;
+    if (!o.children.length) return `<div class="leaf">${label}</div>`;
+    const groups = Object.entries(o.comps).map(([p, cs]) => `<details><summary class="muted">${esc(p)} (${cs.length})</summary>${cs.map(node).join("")}</details>`).join("");
+    return `<details ${o.parent ? "" : "open"}><summary>${label}</summary>${groups}</details>`;
+  };
+  $("#pane-tree").innerHTML = S.model.roots.map(node).join("");
+}
+function renderLegend() {
+  const row = (svg, txt) => `<svg width="44" height="30" viewBox="-22 -15 44 30">${svg}</svg><span>${txt}</span>`;
+  const sym = (kind, short) => { const n = { kind, obj: { short } }; Object.assign(n, symbolSize(n)); return symbolSvg(n); };
+  $("#pane-legend").innerHTML = `<h3>Symbols</h3><div class="legend">
+    ${row(`<g transform="scale(.45)">${sym("equipment", "Tank")}</g>`, "Equipment (Tank; vessel, pump, heat exchanger…)")}
+    ${row(sym("piping", "OperatedValve"), "Operated / control valve")}
+    ${row(sym("piping", "GateValve"), "Valve (generic)")}
+    ${row(sym("piping", "PipeTee"), "Pipe tee / junction")}
+    ${row(`<g transform="scale(.7)">${sym("instrument", "")}</g>`, "Process instrumentation function")}
+    ${row(sym("sensor", ""), "Signal generating function (sensor)")}
+    ${row(sym("end", ""), "Unterminated pipe end")}
+    ${row(sym("piping", "Strainer"), "Other piping component")}
+  </div><h3>Lines</h3><div class="legend">
+    ${row(`<path class="edge pipe" d="M-20,0 H16" marker-end="url(#arr)"/>`, "Pipe (Source → Target)")}
+    ${row(`<path class="edge implied" d="M-20,0 H16"/>`, "Segment without Connections (implied)")}
+    ${row(`<path class="edge measuring" d="M-20,0 H16"/>`, "Sensing location / measuring line")}
+    ${row(`<path class="edge signal" d="M-20,0 H16"/>`, "Signal line")}
+  </div><h3>Notes</h3><p class="muted">The layout is computed from the model's topology (Pipes, Segments, sensing locations, signal lines) because DEXPI conceptual data does not require drawing coordinates. Click a line to highlight its whole PipingNetworkSystem. Keys: <b>F</b> fit, <b>+</b>/<b>−</b> zoom.</p>`;
+}
+
+/* -------------------------------------------------------------- loading */
+function load(text, name) {
+  S.fileName = name || "model";
+  try { S.model = parseDexpi(text); }
+  catch (err) { $("#pane-check").innerHTML = `<h3>Conformance</h3><p><span class="badge err">Not loadable</span></p><p>${esc(err.message)}</p>`; tab("check"); return; }
+  S.issues = validate(S.model);
+  S.graph = buildGraph(S.model); S.sel = null;
+  $("#drop").classList.add("hidden");
+  renderCheck(); renderTree(); tab("check");
+  render(); fit();
+  document.title = `${S.fileName} — DEXPI P&ID Viewer`;
+}
+const readFile = f => f.text().then(t => load(t, f.name));
+$("#file").onchange = e => e.target.files[0] && readFile(e.target.files[0]);
+const stage = $("#stage");
+stage.addEventListener("dragover", e => { e.preventDefault(); stage.classList.add("dragover"); });
+stage.addEventListener("dragleave", () => stage.classList.remove("dragover"));
+stage.addEventListener("drop", e => { e.preventDefault(); stage.classList.remove("dragover"); const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+function loadUrl(u) {
+  fetch(u).then(r => { if (!r.ok) throw new Error(r.status + " " + r.statusText); return r.text(); }).then(t => load(t, u.split("/").pop()))
+    .catch(err => { $("#pane-check").innerHTML = `<p><span class="badge err">Could not fetch</span> ${esc(u)}</p><p class="muted">${esc(err.message)}. Browsers block fetch from <span class="mono">file://</span>; serve the folder (e.g. <span class="mono">python -m http.server</span>) or use Open….</p>`; tab("check"); });
+}
+$("#btnSample").onclick = () => loadUrl("samples/3bb1a46a89c0.dexpi.xml");
+["#optInstr", "#optIso"].forEach(s => $(s).onchange = () => { render(); fit(); });
+$("#optLabels").onchange = () => $("#svg").classList.toggle("hidden-labels", !$("#optLabels").checked);
+$("#search").addEventListener("keydown", e => {
+  if (e.key !== "Enter" || !S.model) return;
+  const q = e.target.value.trim().toLowerCase(); if (!q) return;
+  const hit = S.model.objects.find(o => (o.id || "").toLowerCase() === q) || S.model.objects.find(o => (o.id || "").toLowerCase().includes(q) || Object.values(o.data).flat().some(v => String(v).toLowerCase().includes(q)));
+  if (hit) selectObject(hit.id || ""); else e.target.style.borderColor = "var(--err)", setTimeout(() => e.target.style.borderColor = "", 800);
+});
+$("#btnTheme").onclick = () => { const r = document.documentElement, dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; r.dataset.theme = dark ? "light" : "dark"; };
+$("#btnSvg").onclick = () => {
+  if (!S.view) return;
+  const b = bounds(), svg = $("#svg").cloneNode(true), cs = getComputedStyle(document.documentElement);
+  svg.querySelector("#vp").removeAttribute("transform"); svg.classList.remove("focus");
+  svg.setAttribute("viewBox", `${b.x0} ${b.y0} ${b.x1 - b.x0} ${b.y1 - b.y0}`); svg.setAttribute("width", b.x1 - b.x0); svg.setAttribute("height", b.y1 - b.y0);
+  const vars = [...document.styleSheets[0].cssRules].find(r => r.selectorText === ":root").style;
+  let root = ":root{"; for (const v of vars) if (v.startsWith("--")) root += `${v}:${cs.getPropertyValue(v)};`;
+  const css = root + "}" + [...document.styleSheets[0].cssRules].map(r => r.cssText).filter(t => /^\.(edge|node|s-|grp|hidden)/.test(t)).join("");
+  const st = document.createElementNS("http://www.w3.org/2000/svg", "style"); st.textContent = css + `svg{background:${cs.getPropertyValue("--canvas")};font-family:sans-serif}`;
+  svg.insertBefore(st, svg.firstChild);
+  const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = S.fileName.replace(/\.xml$/i, "") + ".svg"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+renderLegend();
+const qp = new URLSearchParams(location.search).get("file"); if (qp) loadUrl(qp);
+</script>
+</body>
+</html>
