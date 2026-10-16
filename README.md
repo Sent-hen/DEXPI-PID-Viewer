@@ -1,6 +1,6 @@
 # DEXPI P&ID Viewer
 
-A lightweight, dependency-free, single-page viewer and validator for **DEXPI 2.0.1** XML P&ID files.
+A viewer and validator for **DEXPI 2.0.1** XML P&ID files. It's one HTML page with no dependencies. I also use it to check the files my [P&ID Digitizer](https://github.com/Sent-hen/PID-Digitizer) exports.
 
 - **Specification:** [DEXPI Specification 2.0.1](https://dexpi.org/specification/2.0.1/html/)
   - [DEXPI XML exchange format](https://dexpi.org/specification/2.0.1/html/basics/metamodel_and_exchange_format.html)
@@ -63,7 +63,7 @@ python tools/validate.py samples/dexpi_test.dexpi.xml
 
 ### Validation report
 
-Both validators agree. The official reference P&ID passes with **0 errors**, which confirms the checks aren't over-reporting.
+Both validators agree. As a sanity check, the official reference P&ID passes with **0 errors**, so the checks aren't flagging things that are actually fine.
 
 **XSD (DEXPI_XML_Schema.xsd): valid.** The file has 964 objects: 7 piping systems, 197 segments and pipes, 49 operated valves, 75 tees, 16 instrumentation functions and 31 sensors. All of them use existing concrete Plant/Core classes. Property names and kinds, child types, reference target types and upper bounds are all correct. Every IDREF resolves, and every ID is unique.
 
